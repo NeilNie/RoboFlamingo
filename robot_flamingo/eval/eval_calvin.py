@@ -27,7 +27,7 @@ def random_seed(seed=42, rank=0):
     random.seed(seed)
 
 
-@record
+# @record
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--vision_encoder_path", default="ViT-L-14", type=str)
@@ -357,6 +357,7 @@ def main():
 
     args.local_rank, args.rank, args.world_size = world_info_from_env()
 
+    # os.environ['MASTER_ADDR'] = 'localhost'
     device_id = init_distributed_device(args)
     print("device_id: ", device_id)
     print("world_size: ", torch.distributed.get_world_size())
@@ -435,12 +436,13 @@ def main():
     if args.rank == 0:
         print(f"Loading robot-flamingo checkpoint from {args.evaluate_from_checkpoint}")
     checkpoint = torch.load(args.evaluate_from_checkpoint, map_location="cpu")
-    ddp_model.load_state_dict(checkpoint["model_state_dict"], False)  # 只保存了求梯度的部分
+    ddp_model.load_state_dict(checkpoint["model_state_dict"], False)
 
     ddp_model.eval()
     eval_log_dir = None
     if args.visualize:
         eval_log_dir = 'evaluate/{}'.format(args.evaluate_from_checkpoint.split('.')[0])
+    eval_log_dir = "/scr-ssd/neilnie/logs"
     eval_one_epoch_calvin_ddp(
         args=args,
         model=ddp_model,

@@ -43,7 +43,7 @@ import pyrender
 logger = logging.getLogger(__name__)
 
 EP_LEN = 360
-NUM_SEQUENCES = 1000
+NUM_SEQUENCES = 200
 # NUM_SEQUENCES = 400
 
 def get_cast_dtype(precision: str):
@@ -355,7 +355,7 @@ class ModelWrapper(CalvinBaseModel):
         return action
 
 
-def evaluate_policy(model, env, epoch, calvin_conf_path, eval_log_dir=None, debug=False, create_plan_tsne=False, diverse_inst=False):
+def evaluate_policy(model, env, epoch, calvin_conf_path, eval_log_dir=None, debug=False, create_plan_tsne=False, reset=False, diverse_inst=False):
     """
     Run this function to evaluate a model on the CALVIN challenge.
 
@@ -389,8 +389,8 @@ def evaluate_policy(model, env, epoch, calvin_conf_path, eval_log_dir=None, debu
     if not debug:
         eval_sequences = tqdm(eval_sequences, position=0, leave=True)
 
-    for initial_state, eval_sequence in eval_sequences:
-        result = evaluate_sequence(env, model, task_oracle, initial_state, eval_sequence, val_annotations, plans, debug)
+    for i, (initial_state, eval_sequence) in enumerate(eval_sequences):
+        result = evaluate_sequence(env, model, task_oracle, initial_state, eval_sequence, val_annotations, plans, debug, reset=reset, sequence_i=i)
         results.append(result)
         if not debug:
             eval_sequences.set_description(
@@ -432,8 +432,9 @@ def evaluate_policy_ddp(model, env, epoch, calvin_conf_path, eval_log_dir=None, 
         val_annotations = OmegaConf.load(conf_dir / "annotations/new_playtable_validation.yaml")
 
     eval_log_dir = get_log_dir(eval_log_dir)
-    with open('/mnt/bn/robotics/lxh/robot-flamingo/eval_sequences.json', 'r') as f:
-        eval_sequences = json.load(f)
+    # with open('/mnt/bn/robotics/lxh/robot-flamingo/eval_sequences.json', 'r') as f:
+    #     eval_sequences = json.load(f)
+    eval_sequences = get_sequences(NUM_SEQUENCES)
     device_num = int(torch.distributed.get_world_size())
     device_id = torch.distributed.get_rank()
     assert NUM_SEQUENCES % device_num == 0
@@ -444,16 +445,15 @@ def evaluate_policy_ddp(model, env, epoch, calvin_conf_path, eval_log_dir=None, 
     local_sequence_i = 0
     base_sequence_i = device_id * interval_len
 
-    if not debug:
-        eval_sequences = tqdm(eval_sequences, position=0, leave=True)
+    # if not debug:
+    eval_sequences = tqdm(eval_sequences, position=0, leave=True)
 
-    for initial_state, eval_sequence in eval_sequences:
+    for i, (initial_state, eval_sequence) in enumerate(eval_sequences):
         result = evaluate_sequence(env, model, task_oracle, initial_state, eval_sequence, val_annotations, plans, debug, eval_log_dir, base_sequence_i+local_sequence_i, reset=reset, diverse_inst=diverse_inst)
         results.append(result)
-        if not debug:
-            eval_sequences.set_description(
-                " ".join([f"{i + 1}/5 : {v * 100:.1f}% |" for i, v in enumerate(count_success(results))]) + "|"
-            )
+        eval_sequences.set_description(
+            " ".join([f"{i + 1}/5 : {v * 100:.1f}% |" for i, v in enumerate(count_success(results))]) + "|"
+        )
         local_sequence_i += 1
     def merge_multi_list(res):
         tmp = []
@@ -498,9 +498,9 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
         print("Subtask: ", end="")
     for subtask_i, subtask in enumerate(eval_sequence):
         if reset:
-            success = rollout(env, model, task_checker, subtask, val_annotations, plans, debug, eval_log_dir, subtask_i, sequence_i, robot_obs=robot_obs, scene_obs=scene_obs, diverse_inst=diverse_inst)
+            success = rollout(env, model, task_checker, subtask, val_annotations, plans, debug, eval_log_dir, sequence_i=sequence_i, subtask_i=subtask_i, robot_obs=robot_obs, scene_obs=scene_obs, diverse_inst=diverse_inst)
         else:
-            success = rollout(env, model, task_checker, subtask, val_annotations, plans, debug, eval_log_dir, subtask_i, sequence_i,diverse_inst=diverse_inst)
+            success = rollout(env, model, task_checker, subtask, val_annotations, plans, debug, eval_log_dir, sequence_i=sequence_i, subtask_i=subtask_i,diverse_inst=diverse_inst)
         if success:
             success_counter += 1
         else:
@@ -508,7 +508,7 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
     return success_counter
 
 
-def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eval_log_dir='', subtask_i=-1, sequence_i=-1, robot_obs=None, scene_obs=None, diverse_inst=False):
+def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eval_log_dir='', subtask_i=1, sequence_i=0, robot_obs=None, scene_obs=None, diverse_inst=False):
     """
     Run the actual rollout on one subtask (which is one natural language instruction).
     """
@@ -563,20 +563,29 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
             if debug:
                 print(colored("success", "green"), end=" ")
                 img_clip = ImageSequenceClip(img_queue, fps=30)
-                img_clip.write_gif(os.path.join(eval_log_dir, f'{sequence_i}-{subtask_i}-{subtask}-succ.gif'), fps=30)
+                if not os.path.exists(os.path.join(eval_log_dir, f"{sequence_i}")):
+                    os.mkdir(os.path.join(eval_log_dir, f"{sequence_i}"))
+                img_clip.write_gif(os.path.join(eval_log_dir, f"{sequence_i}", f'{sequence_i}-{subtask_i}-{subtask}-succ.gif'), fps=30)
             return True
     if debug:
         print(colored("fail", "red"), end=" ")
         img_clip = ImageSequenceClip(img_queue, fps=30)
-        img_clip.write_gif(os.path.join(eval_log_dir, f'{sequence_i}-{subtask_i}-{subtask}-fail.gif'), fps=30)
+        if not os.path.exists(os.path.join(eval_log_dir, f"{sequence_i}")):
+            os.mkdir(os.path.join(eval_log_dir, f"{sequence_i}"))
+        img_clip.write_gif(os.path.join(eval_log_dir, f"{sequence_i}", f'{sequence_i}-{subtask_i}-{subtask}-fail.gif'), fps=30)
     return False
 
-def eval_one_epoch_calvin(args, model, dataset_path, image_processor, tokenizer, future_act_len=-1):
+def eval_one_epoch_calvin(args, model, dataset_path, image_processor, tokenizer, eval_log_dir=None, debug=False, reset=False, diverse_inst=False, future_act_len=-1):
 
     env = make_env(dataset_path)
     cast_dtype = get_cast_dtype(args.precision)
-    wrapped_model = ModelWrapper(model, tokenizer, image_processor, cast_dtype, args.head_type=="diffusion", history_len=args.n_obs_steps, future_act_len=future_act_len)
-    evaluate_policy(wrapped_model, env, 0, args.calvin_conf_path)
+    hist_len = None
+    if args.head_type=="diffusion":
+        hist_len = args.n_obs_steps
+    elif args.pad_length != -1:
+        hist_len = args.pad_length
+    wrapped_model = ModelWrapper(model, tokenizer, image_processor, cast_dtype, args.head_type=="diffusion", history_len=hist_len, future_act_len=future_act_len)
+    evaluate_policy(wrapped_model, env, 0, args.calvin_conf_path, eval_log_dir=eval_log_dir, reset=reset, debug=debug)
 
 
 def eval_one_epoch_calvin_ddp(args, model, dataset_path, image_processor, tokenizer, eval_log_dir=None, debug=False, future_act_len=-1, reset=False, diverse_inst=False):

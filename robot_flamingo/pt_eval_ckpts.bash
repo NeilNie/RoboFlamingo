@@ -3,24 +3,24 @@
 export EVALUTION_ROOT=$(pwd)
 
 # Install dependency for calvin
-sudo apt-get -y install libegl1-mesa libegl1
-sudo apt-get -y install libgl1
+# sudo apt-get -y install libegl1-mesa libegl1
+# sudo apt-get -y install libgl1
 
-sudo apt-get update -y -qq
-sudo apt-get install -y -qq libegl1-mesa libegl1-mesa-dev
+# sudo apt-get update -y -qq
+# sudo apt-get install -y -qq libegl1-mesa libegl1-mesa-dev
 
-sudo apt install -y mesa-utils libosmesa6-dev llvm
-sudo apt-get -y install meson
-sudo apt-get -y build-dep mesa
+# sudo apt install -y mesa-utils libosmesa6-dev llvm
+# sudo apt-get -y install meson
+# sudo apt-get -y build-dep mesa
 
 # !!! Set for your own path
-calvin_dataset_path='calvin_data/task_ABCD_D'
+calvin_dataset_path='/scr-ssd/neilnie/datasets/CALVIN/task_D_D'
 # calvin_conf_path
-calvin_conf_path="calvin/calvin_models/conf"
+calvin_conf_path="/viscam/u/neilnie/workspace/calvin/calvin_models/conf"
 # language model path
-lm_path=''
+lm_path='/viscam/u/neilnie/workspace/RoboFlamingo/mpt-1b-redpajama-200b-dolly/'
 # tokenizer path
-tokenizer_path=''
+tokenizer_path='/viscam/u/neilnie/workspace/RoboFlamingo/mpt-1b-redpajama-200b-dolly/'
 
 evaluate_from_checkpoint=$1
 log_file=$2
@@ -34,6 +34,21 @@ node_num=8
 
 if [ ${use_gripper} -eq 1 ] && [ ${use_state} -eq 1 ]
 then
+echo "torchrun --nnodes=1 --nproc_per_node=${node_num}  --master_port=6066 robot_flamingo/eval/eval_calvin.py \
+    --precision fp32 \
+    --use_gripper \
+    --use_state \
+    --window_size ${window_size} \
+    --fusion_mode ${fusion_mode} \
+    --run_name RobotFlamingoDBG \
+    --calvin_dataset ${calvin_dataset_path} \
+    --lm_path ${lm_path} \
+    --tokenizer_path ${tokenizer_path} \
+    --cross_attn_every_n_layers 4 \
+    --evaluate_from_checkpoint ${evaluate_from_checkpoint} \
+    --calvin_conf_path ${calvin_conf_path} \
+    --workers 1"
+
 torchrun --nnodes=1 --nproc_per_node=${node_num}  --master_port=6066 robot_flamingo/eval/eval_calvin.py \
     --precision fp32 \
     --use_gripper \
@@ -47,11 +62,26 @@ torchrun --nnodes=1 --nproc_per_node=${node_num}  --master_port=6066 robot_flami
     --cross_attn_every_n_layers 4 \
     --evaluate_from_checkpoint ${evaluate_from_checkpoint} \
     --calvin_conf_path ${calvin_conf_path} \
-    --workers 1 > ${log_file} 2>&1
+    --workers 1
 fi
 
 if [ ${use_gripper} -eq 1 ] && [ ${use_state} -eq 0 ]
 then
+echo "torchrun --nnodes=1 --nproc_per_node=${node_num}  --master_port=6099 robot_flamingo/eval/eval_calvin.py \
+    --precision fp32 \
+    --use_gripper \
+    --window_size ${window_size} \
+    --fusion_mode ${fusion_mode} \
+    --run_name RobotFlamingoDBG \
+    --calvin_dataset ${calvin_dataset_path} \
+    --lm_path ${lm_path} \
+    --tokenizer_path ${tokenizer_path} \
+    --cross_attn_every_n_layers 4 \
+    --evaluate_from_checkpoint ${evaluate_from_checkpoint} \
+    --calvin_conf_path ${calvin_conf_path} \
+    --workers 1
+fi"
+
 torchrun --nnodes=1 --nproc_per_node=${node_num}  --master_port=6099 robot_flamingo/eval/eval_calvin.py \
     --precision fp32 \
     --use_gripper \
@@ -64,11 +94,26 @@ torchrun --nnodes=1 --nproc_per_node=${node_num}  --master_port=6099 robot_flami
     --cross_attn_every_n_layers 4 \
     --evaluate_from_checkpoint ${evaluate_from_checkpoint} \
     --calvin_conf_path ${calvin_conf_path} \
-    --workers 1 > ${log_file} 2>&1
+    --workers 1
 fi
 
 if [ ${use_gripper} -eq 0 ] && [ ${use_state} -eq 0 ]
 then
+
+echo "torchrun --nnodes=1 --nproc_per_node=${node_num}  --master_port=6066 robot_flamingo/eval/eval_calvin.py \
+    --precision fp32 \
+    --run_name RobotFlamingoDBG \
+    --window_size ${window_size} \
+    --fusion_mode ${fusion_mode} \
+    --calvin_dataset ${calvin_dataset_path} \
+    --lm_path ${lm_path} \
+    --tokenizer_path ${tokenizer_path} \
+    --cross_attn_every_n_layers 4 \
+    --evaluate_from_checkpoint ${evaluate_from_checkpoint} \
+    --calvin_conf_path ${calvin_conf_path} \
+    --workers 1 > ${log_file} 2>&1
+fi"
+
 torchrun --nnodes=1 --nproc_per_node=${node_num}  --master_port=6066 robot_flamingo/eval/eval_calvin.py \
     --precision fp32 \
     --run_name RobotFlamingoDBG \
